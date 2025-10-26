@@ -5,12 +5,11 @@ import numpy as np
 from PIL import Image
 import pickle
 from deepface import DeepFace
-from sklearn.metrics.pairwise import cosine_similarity
 import mediapipe as mp
 from gtts import gTTS
 
 # ======================
-# --- PATHS / MODELS ---
+# --- Paths / Models ---
 # ======================
 MODEL_FOLDER = "model"
 os.makedirs(MODEL_FOLDER, exist_ok=True)
@@ -19,10 +18,10 @@ FACE_DB_PATH = os.path.join(MODEL_FOLDER, "face_user_db.pkl")
 HAND_DB_PATH = os.path.join(MODEL_FOLDER, "hand_user_db.pkl")
 GESTURE_CLF_PATH = os.path.join(MODEL_FOLDER, "gesture_clf.pkl")
 GESTURE_CMDS_PATH = os.path.join(MODEL_FOLDER, "gesture_commands.pkl")
-CHARACTER_PATH = os.path.join(MODEL_FOLDER, "doraemon.png")  # your character image
+CHARACTER_PATH = os.path.join(MODEL_FOLDER, "doraemon.png")  # Doraemon image
 
 # ======================
-# --- INITIALIZATION ---
+# --- Initialization ---
 # ======================
 mp_hands = mp.solutions.hands
 hands_model = mp_hands.Hands(static_image_mode=True, max_num_hands=1)
@@ -39,11 +38,12 @@ if os.path.exists(GESTURE_CMDS_PATH):
     with open(GESTURE_CMDS_PATH, "rb") as f: gesture_commands = pickle.load(f)
 
 # ======================
-# --- FEATURE EXTRACTION ---
+# --- Helper Functions ---
 # ======================
 def extract_hand_landmarks(frame):
     results = hands_model.process(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
-    if not results.multi_hand_landmarks: return None
+    if not results.multi_hand_landmarks: 
+        return None
     lm = results.multi_hand_landmarks[0]
     points = np.array([(l.x, l.y) for l in lm.landmark])
     points -= np.mean(points, axis=0)
@@ -60,16 +60,19 @@ def speak(text):
             st.image(CHARACTER_PATH, caption="Doraemon says:", width=200)
 
 # ======================
-# --- AUTHENTICATION ---
+# --- Face Authentication ---
 # ======================
 def authenticate_face(img_path, username, threshold=0.35):
     if username not in face_user_db: return False
     try:
-        emb = DeepFace.represent(img_path, model_name="Facenet512", enforce_detection=True)[0]["embedding"]
+        emb = DeepFace.represent(img_path, model_name="OpenFace", enforce_detection=True)[0]["embedding"]
     except: return False
     best = max(np.dot(emb_db, emb)/(np.linalg.norm(emb_db)*np.linalg.norm(emb)) for emb_db in face_user_db[username])
     return best >= threshold
 
+# ======================
+# --- Hand Authentication ---
+# ======================
 def authenticate_hand(frame, username, threshold=2.5):
     if username not in hand_user_db: return False
     emb = extract_hand_landmarks(frame)
@@ -77,6 +80,9 @@ def authenticate_hand(frame, username, threshold=2.5):
     best_dist = min([np.linalg.norm(emb-e) for e in hand_user_db[username]])
     return best_dist < threshold
 
+# ======================
+# --- Multi-Modal Auth ---
+# ======================
 def master_authenticate(username, frame_path):
     frame = cv2.imread(frame_path)
     f = authenticate_face(frame_path, username)
@@ -86,12 +92,16 @@ def master_authenticate(username, frame_path):
     return matches>=1, status
 
 # ======================
-# --- STREAMLIT UI ---
+# --- Streamlit UI ---
 # ======================
-st.title("🔐 Doraemon Multi-Modal Auth System")
+st.title("🔐 Doraemon Multi-Modal Authentication")
+
 username = st.text_input("Enter User Name")
 menu = st.selectbox("Select Action", ["Enrollment","Authentication"])
 
+# ----------------------
+# Enrollment
+# ----------------------
 if menu=="Enrollment":
     st.subheader("Enroll User")
     uploaded_file = st.file_uploader("Upload Face Image", type=["jpg","png"])
@@ -100,17 +110,23 @@ if menu=="Enrollment":
         frame = np.array(img)[:,:,::-1]
         path = f"temp_{username}.jpg"
         cv2.imwrite(path, frame)
-        # Face Embedding
-        emb = DeepFace.represent(path, model_name="Facenet512", enforce_detection=True)[0]["embedding"]
+
+        # --- Face ---
+        emb = DeepFace.represent(path, model_name="OpenFace", enforce_detection=True)[0]["embedding"]
         face_user_db[username] = [emb]
         with open(FACE_DB_PATH,"wb") as f: pickle.dump(face_user_db,f)
-        # Hand embedding
+
+        # --- Hand ---
         hand_emb = extract_hand_landmarks(frame)
         if hand_emb is not None:
             hand_user_db[username] = [hand_emb]
             with open(HAND_DB_PATH,"wb") as f: pickle.dump(hand_user_db,f)
+
         st.success(f"✅ User {username} enrolled!")
 
+# ----------------------
+# Authentication
+# ----------------------
 elif menu=="Authentication":
     st.subheader("Authenticate User")
     uploaded_file = st.file_uploader("Upload Image for Authentication", type=["jpg","png"])
