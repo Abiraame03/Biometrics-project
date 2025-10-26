@@ -14,7 +14,7 @@ from gtts import gTTS
 # ======================
 # --- PATHS / MODELS ---
 # ======================
-MODEL_FOLDER = "models"
+MODEL_FOLDER = "model"
 os.makedirs(MODEL_FOLDER, exist_ok=True)
 
 DLIB_PATH = os.path.join(MODEL_FOLDER, "shape_predictor_68_face_landmarks.dat")
