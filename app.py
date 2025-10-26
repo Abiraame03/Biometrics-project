@@ -10,43 +10,66 @@ import bz2
 import shutil
 import urllib.request
 from PIL import Image
-from deepface import DeepFace
-from fer import FER
-import dlib
 from gtts import gTTS
 from sklearn.metrics.pairwise import cosine_similarity
 from skimage.feature import local_binary_pattern
-import mediapipe as mp
-from sklearn.ensemble import RandomForestClassifier
 
 # =========================================================================
-# --- Model & File Paths ---
-DLIB_LANDMARK_PATH = "shape_predictor_68_face_landmarks.dat"
-FACE_DB_PATH = "face_user_db_multi.pkl"
-HAND_DB_PATH = "hand_user_db1.pkl"
-CLASSIFIER_PATH = "gesture_classifier.pkl"
-GESTURE_COMMANDS_PATH = "gesture_commands.pkl"
+# --- MODELS FOLDER ---
+MODEL_FOLDER = "models"
+os.makedirs(MODEL_FOLDER, exist_ok=True)
+
+DLIB_LANDMARK_PATH = os.path.join(MODEL_FOLDER, "shape_predictor_68_face_landmarks.dat")
+FACE_DB_PATH = os.path.join(MODEL_FOLDER, "face_user_db_multi.pkl")
+HAND_DB_PATH = os.path.join(MODEL_FOLDER, "hand_user_db1.pkl")
+CLASSIFIER_PATH = os.path.join(MODEL_FOLDER, "gesture_classifier.pkl")
+GESTURE_COMMANDS_PATH = os.path.join(MODEL_FOLDER, "gesture_commands.pkl")
+CHARACTER_PATH = os.path.join(MODEL_FOLDER, "character.png")
 
 # =========================================================================
-# --- Download Dlib model if not exists ---
-if not os.path.exists(DLIB_LANDMARK_PATH):
-    st.info("Downloading shape predictor (68 landmarks)...")
-    url = "https://dlib.net/files/shape_predictor_68_face_landmarks.dat.bz2"
-    urllib.request.urlretrieve(url, f"{DLIB_LANDMARK_PATH}.bz2")
-    with bz2.open(f"{DLIB_LANDMARK_PATH}.bz2", "rb") as f_in:
-        with open(DLIB_LANDMARK_PATH, "wb") as f_out:
+# 🔹 STREAMLIT CACHING FOR MODELS
+@st.cache_resource(show_spinner=False)
+def load_dlib_models():
+    import dlib
+    if not os.path.exists(DLIB_LANDMARK_PATH):
+        st.info("Downloading shape predictor (~100MB)...")
+        url = "https://dlib.net/files/shape_predictor_68_face_landmarks.dat.bz2"
+        bz2_path = DLIB_LANDMARK_PATH + ".bz2"
+        urllib.request.urlretrieve(url, bz2_path)
+        with bz2.open(bz2_path, "rb") as f_in, open(DLIB_LANDMARK_PATH, "wb") as f_out:
             shutil.copyfileobj(f_in, f_out)
-st.success("✅ Landmark model ready")
+        os.remove(bz2_path)
+    detector = dlib.get_frontal_face_detector()
+    predictor = dlib.shape_predictor(DLIB_LANDMARK_PATH)
+    return detector, predictor
+
+@st.cache_resource(show_spinner=False)
+def load_fer_model():
+    from fer import FER
+    return FER(mtcnn=False)
+
+@st.cache_resource(show_spinner=False)
+def load_deepface_model():
+    from deepface import DeepFace
+    model = DeepFace.build_model("Facenet512")
+    return model
+
+@st.cache_resource(show_spinner=False)
+def load_mediapipe_hands():
+    import mediapipe as mp
+    mp_hands = mp.solutions.hands
+    hands = mp_hands.Hands(static_image_mode=True, max_num_hands=1)
+    return hands
 
 # =========================================================================
-# 🔹 INITIALIZATION
-dlib_detector = dlib.get_frontal_face_detector()
-dlib_predictor = dlib.shape_predictor(DLIB_LANDMARK_PATH)
-fer_detector = FER(mtcnn=False)
-mp_hands = mp.solutions.hands
-hands = mp_hands.Hands(static_image_mode=True, max_num_hands=1)
+# 🔹 INITIALIZE MODELS (LAZY LOADING)
+dlib_detector, dlib_predictor = load_dlib_models()
+fer_detector = load_fer_model()
+deepface_model = load_deepface_model()
+hands = load_mediapipe_hands()
 
-# Load databases
+# =========================================================================
+# 🔹 LOAD DATABASES
 face_user_db = {}
 if os.path.exists(FACE_DB_PATH):
     with open(FACE_DB_PATH, "rb") as f: face_user_db = pickle.load(f)
@@ -60,14 +83,11 @@ gesture_commands = {}
 try:
     with open(CLASSIFIER_PATH, "rb") as f: gesture_clf = pickle.load(f)
     with open(GESTURE_COMMANDS_PATH, "rb") as f: gesture_commands = pickle.load(f)
-    st.success("✅ Classifier and commands loaded.")
 except:
-    st.warning("⚠ Classifier/Commands not found. Run enrollment first to train.")
+    pass
 
 # =========================================================================
 # 🛠 HELPER FUNCTIONS
-
-# --- Streamlit webcam capture
 def capture_webcam():
     img_file_buffer = st.camera_input("Capture Image")
     if img_file_buffer is not None:
@@ -76,7 +96,6 @@ def capture_webcam():
         return image_cv, img_file_buffer
     return None, None
 
-# --- Iris extraction
 def extract_iris_dlib(gray, landmarks, eye_points):
     xs = [landmarks.part(p).x for p in eye_points]
     ys = [landmarks.part(p).y for p in eye_points]
@@ -88,6 +107,7 @@ def extract_iris_dlib(gray, landmarks, eye_points):
     return eye_img
 
 def get_iris_features(img_path):
+    import dlib
     img = cv2.imread(img_path)
     if img is None: return None
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
@@ -104,7 +124,6 @@ def get_iris_features(img_path):
                 feats.append(hist.reshape(1, -1))
     return np.mean(feats, axis=0) if feats else None
 
-# --- Hand landmarks
 def extract_hand_landmarks(frame):
     results = hands.process(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
     if not results.multi_hand_landmarks: return None
@@ -116,16 +135,13 @@ def extract_hand_landmarks(frame):
     if norm > 0: points /= norm
     return points.flatten()
 
-# --- Voice output with character
 def speak_with_character(text):
     if text:
-        # Voice
         tts = gTTS(text)
         tts.save("output.mp3")
         audio_file = open("output.mp3", "rb")
-        # Character image
-        char_img = Image.open("character.png") if os.path.exists("character.png") else None
-        if char_img:
+        if os.path.exists(CHARACTER_PATH):
+            char_img = Image.open(CHARACTER_PATH)
             st.image(char_img, caption="🤖 Speaking...", width=200)
         st.audio(audio_file.read(), format="audio/mp3")
         st.success(text)
@@ -134,8 +150,9 @@ def speak_with_character(text):
 # 🎯 AUTHENTICATION FUNCTIONS
 def authenticate_face(captured_image_path, username, threshold=0.35):
     if username not in face_user_db: return False
+    from deepface import DeepFace
     try:
-        cap_emb = DeepFace.represent(captured_image_path, enforce_detection=True, model_name="Facenet512")[0]["embedding"]
+        cap_emb = DeepFace.represent(captured_image_path, model_name="Facenet512", model=deepface_model, enforce_detection=True)[0]["embedding"]
     except:
         return False
     best_similarity = -1
@@ -177,26 +194,23 @@ def master_multi_modal_authenticate(username, frame_path):
 # =========================================================================
 # 4. STREAMLIT UI
 st.title("🔐 Multi-Modal Biometric Authentication System")
-
 username = st.text_input("Enter User Name")
-
 menu = st.selectbox("Select Action", ["Enrollment", "Authentication"])
 
 if menu == "Enrollment":
     st.subheader("User Enrollment")
     image_cv, img_file = capture_webcam()
     if st.button("Register User") and username and image_cv is not None:
-        # Register Face
-        temp_face_path = f"{username}_face.jpg"
+        temp_face_path = os.path.join(MODEL_FOLDER, f"{username}_face.jpg")
         cv2.imwrite(temp_face_path, image_cv)
+        from deepface import DeepFace
         try:
-            emb = DeepFace.represent(temp_face_path, enforce_detection=True, model_name="Facenet512")[0]["embedding"]
+            emb = DeepFace.represent(temp_face_path, model_name="Facenet512", model=deepface_model, enforce_detection=True)[0]["embedding"]
             face_user_db[username] = [emb]
             with open(FACE_DB_PATH, "wb") as f: pickle.dump(face_user_db, f)
             st.success("✅ Face registered")
         except:
             st.error("❌ Face registration failed")
-        # Register Hand
         emb_hand = extract_hand_landmarks(image_cv)
         if emb_hand is not None:
             hand_user_db[username] = [emb_hand]
@@ -209,7 +223,7 @@ elif menu == "Authentication":
     st.subheader("User Authentication")
     image_cv, img_file = capture_webcam()
     if st.button("Authenticate") and username and image_cv is not None:
-        temp_path = f"{username}_auth.jpg"
+        temp_path = os.path.join(MODEL_FOLDER, f"{username}_auth.jpg")
         cv2.imwrite(temp_path, image_cv)
         success, message = master_multi_modal_authenticate(username, temp_path)
         st.write(message)
