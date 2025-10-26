@@ -22,8 +22,6 @@ os.makedirs(MODEL_FOLDER, exist_ok=True)
 DLIB_LANDMARK_PATH = os.path.join(MODEL_FOLDER, "shape_predictor_68_face_landmarks.dat")
 FACE_DB_PATH = os.path.join(MODEL_FOLDER, "face_user_db_multi.pkl")
 HAND_DB_PATH = os.path.join(MODEL_FOLDER, "hand_user_db1.pkl")
-CLASSIFIER_PATH = os.path.join(MODEL_FOLDER, "gesture_classifier.pkl")
-GESTURE_COMMANDS_PATH = os.path.join(MODEL_FOLDER, "gesture_commands.pkl")
 CHARACTER_PATH = os.path.join(MODEL_FOLDER, "character.png")
 
 # =========================================================================
@@ -53,7 +51,6 @@ def download_with_progress(url, dest_path):
 # ----------------------------
 # Lazy load DLIB detector/predictor
 # ----------------------------
-@st.cache_resource(show_spinner=False)
 def get_dlib_models():
     import dlib
     if not os.path.exists(DLIB_LANDMARK_PATH):
@@ -67,30 +64,34 @@ def get_dlib_models():
     return detector, predictor
 
 # ----------------------------
-# Lazy load DeepFace
+# Lazy load DeepFace model on-demand
 # ----------------------------
-@st.cache_resource(show_spinner=False)
 def get_deepface_model():
     from deepface import DeepFace
-    model = DeepFace.build_model("Facenet512")
+    with st.spinner("Loading DeepFace model (~50–100 MB, this may take 1–2 minutes)..."):
+        model = DeepFace.build_model("Facenet512")
+    st.success("✅ DeepFace model loaded")
     return model
 
 # ----------------------------
-# Lazy load FER
+# Lazy load FER model on-demand
 # ----------------------------
-@st.cache_resource(show_spinner=False)
 def get_fer_model():
     from fer import FER
-    return FER(mtcnn=False)
+    with st.spinner("Loading FER emotion model..."):
+        fer_model = FER(mtcnn=False)
+    st.success("✅ FER model loaded")
+    return fer_model
 
 # ----------------------------
-# Lazy load Mediapipe hands
+# Lazy load Mediapipe hands on-demand
 # ----------------------------
-@st.cache_resource(show_spinner=False)
 def get_mediapipe_hands():
     import mediapipe as mp
-    mp_hands = mp.solutions.hands
-    hands = mp_hands.Hands(static_image_mode=True, max_num_hands=1)
+    with st.spinner("Loading Mediapipe Hands model..."):
+        mp_hands = mp.solutions.hands
+        hands = mp_hands.Hands(static_image_mode=True, max_num_hands=1)
+    st.success("✅ Mediapipe Hands loaded")
     return hands
 
 # ----------------------------
@@ -157,14 +158,6 @@ if os.path.exists(FACE_DB_PATH):
 hand_user_db = {}
 if os.path.exists(HAND_DB_PATH):
     with open(HAND_DB_PATH, "rb") as f: hand_user_db = pickle.load(f)
-
-gesture_clf = None
-gesture_commands = {}
-try:
-    with open(CLASSIFIER_PATH, "rb") as f: gesture_clf = pickle.load(f)
-    with open(GESTURE_COMMANDS_PATH, "rb") as f: gesture_commands = pickle.load(f)
-except:
-    pass
 
 # =========================================================================
 # 🔹 AUTHENTICATION FUNCTIONS
