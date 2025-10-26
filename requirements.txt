@@ -1,5 +1,5 @@
 streamlit==1.39.0
-opencv-python-headless==4.10.0.84
+opencv-python-headless==4.9.0.80
 numpy==1.26.4
 pandas==2.2.2
 scikit-learn==1.5.1
@@ -7,7 +7,7 @@ scikit-image==0.24.0
 dlib==19.24.4
 deepface==0.0.92
 fer==22.4.0
-mediapipe==0.10.14
+mediapipe==0.10.9
 mtcnn==0.1.1
 gTTS==2.5.1
 tensorflow==2.16.1
@@ -15,3 +15,4 @@ keras==3.4.1
 protobuf==3.20.3
 imutils==0.5.4
 gdown==5.2.0
+
