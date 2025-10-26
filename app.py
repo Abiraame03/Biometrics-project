@@ -28,7 +28,6 @@ CHARACTER_PATH = os.path.join(MODEL_FOLDER, "character.png")
 
 # =========================================================================
 # 🔹 HELPER FUNCTIONS
-
 def capture_webcam():
     img_file_buffer = st.camera_input("Capture Image")
     if img_file_buffer is not None:
@@ -38,16 +37,28 @@ def capture_webcam():
     return None, None
 
 # ----------------------------
+# Download with Streamlit progress
+# ----------------------------
+def download_with_progress(url, dest_path):
+    st.info(f"Downloading {os.path.basename(dest_path)} ... (~100 MB)")
+    with st.spinner("Downloading..."):
+        with st.empty() as placeholder:
+            def progress_hook(block_num, block_size, total_size):
+                downloaded = block_num * block_size
+                progress = min(downloaded / total_size, 1.0)
+                placeholder.progress(progress)
+            urllib.request.urlretrieve(url, dest_path, reporthook=progress_hook)
+    st.success("✅ Download completed")
+
+# ----------------------------
 # Lazy load DLIB detector/predictor
 # ----------------------------
 @st.cache_resource(show_spinner=False)
 def get_dlib_models():
     import dlib
     if not os.path.exists(DLIB_LANDMARK_PATH):
-        st.info("Downloading shape predictor (~100MB)...")
-        url = "https://dlib.net/files/shape_predictor_68_face_landmarks.dat.bz2"
         bz2_path = DLIB_LANDMARK_PATH + ".bz2"
-        urllib.request.urlretrieve(url, bz2_path)
+        download_with_progress("https://dlib.net/files/shape_predictor_68_face_landmarks.dat.bz2", bz2_path)
         with bz2.open(bz2_path, "rb") as f_in, open(DLIB_LANDMARK_PATH, "wb") as f_out:
             shutil.copyfileobj(f_in, f_out)
         os.remove(bz2_path)
@@ -175,7 +186,6 @@ def authenticate_iris(img_path, username, detector, predictor):
     iris_feat = get_iris_features(img_path, detector, predictor)
     if iris_feat is None: return False
     enrolled_feat = np.ones((1,9))*0.111
-    from sklearn.metrics.pairwise import cosine_similarity
     sim = cosine_similarity(enrolled_feat, iris_feat)[0][0]
     return sim >= 0.6
 
