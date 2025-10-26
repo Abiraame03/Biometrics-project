@@ -11,12 +11,12 @@ from gtts import gTTS
 # ======================
 # --- Paths / Models ---
 # ======================
-MODEL_FOLDER = "model"
+MODEL_FOLDER = "Models"
 os.makedirs(MODEL_FOLDER, exist_ok=True)
 
-FACE_DB_PATH = os.path.join(MODEL_FOLDER, "face_user_db.pkl")
-HAND_DB_PATH = os.path.join(MODEL_FOLDER, "hand_user_db.pkl")
-GESTURE_CLF_PATH = os.path.join(MODEL_FOLDER, "gesture_clf.pkl")
+FACE_DB_PATH = os.path.join(MODEL_FOLDER, "face_user_db_multi.pkl")
+HAND_DB_PATH = os.path.join(MODEL_FOLDER, "hand_user_db1.pkl")
+GESTURE_CLF_PATH = os.path.join(MODEL_FOLDER, "gesture_classifier.pkl")
 GESTURE_CMDS_PATH = os.path.join(MODEL_FOLDER, "gesture_commands.pkl")
 CHARACTER_PATH = os.path.join(MODEL_FOLDER, "doraemon.png")  # Doraemon image
 
